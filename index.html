@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Simulation de distributions normales</title>
+  <!-- Inclusion de la librairie p5.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.6.0/p5.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      background: #f9f9f9;
+      color: #333;
+    }
+    h1, h2 {
+      text-align: center;
+    }
+    #controls, #simulationControls {
+      background: #fff;
+      padding: 15px;
+      border-radius: 8px;
+      max-width: 800px;
+      margin: 10px auto;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    #controls form {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    #controls form div {
+      margin: 10px;
+    }
+    .population-params {
+      background: #f5f5f5;
+      padding: 15px;
+      border-radius: 8px;
+    }
+    .population-red h3 {
+      margin-top: 0;
+      color: #d32f2f;
+      text-align: center;
+    }
+    .population-green h3 {
+      margin-top: 0;
+      color: #09bf12;
+      text-align: center;
+    }
+    .population-red label {
+      color: #d32f2f;
+    }
+    .population-green label {
+      color: #09bf12;
+    }
+    #simulationControls form {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-around;
+    }
+    #simulationControls form div {
+      margin: 10px;
+      flex: 1 1 200px;
+      min-width: 200px;
+    }
+    label {
+      display: block;
+      margin-bottom: 5px;
+    }
+    input[type="number"] {
+      width: 100%;
+      padding: 5px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    button {
+      padding: 10px 20px;
+      margin: 10px auto;
+      display: block;
+      background-color: #007BFF;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+    #canvasContainer {
+      max-width: 800px;
+      margin: 20px auto;
+      position: relative;
+    }
+    #result {
+      text-align: center;
+      font-size: 1.2em;
+      margin-top: 15px;
+    }
+    /* Style pour le bouton Réinitialiser */
+    #resetButton {
+      background-color: #dc3545;
+    }
+    #resetButton:hover {
+      background-color: #c82333;
+    }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <h1>Simulation de distributions normales</h1>
+    <p>Entrez les paramètres pour chaque distribution :</p>
+    <form id="paramForm">
+      <div class="population-params population-red">
+        <h3>Population Rouge</h3>
+        <div>
+          <label for="redMean">Moyenne :</label>
+          <input type="number" step="any" id="redMean" placeholder="ex: 0">
+        </div>
+        <div>
+          <label for="redStd">Écart-type :</label>
+          <input type="number" step="any" id="redStd" placeholder="ex: 1">
+        </div>
+      </div>
+      <div class="population-params population-green">
+        <h3>Population Verte</h3>
+        <div>
+          <label for="greenMean">Moyenne :</label>
+          <input type="number" step="any" id="greenMean" placeholder="ex: 0">
+        </div>
+        <div>
+          <label for="greenStd">Écart-type :</label>
+          <input type="number" step="any" id="greenStd" placeholder="ex: 1">
+        </div>
+      </div>
+      <div style="grid-column: 1 / -1; text-align: center;">
+        <button type="button" id="displayButton">Afficher</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="canvasContainer">
+    <!-- Le canvas p5.js sera inséré ici -->
+  </div>
+
+  <div id="simulationControls" style="display: none;">
+    <h2>Simulation de tirages</h2>
+    <form id="simulationForm">
+      <div>
+        <label for="numPairs">Nombre de paires à tirer au sort :</label>
+        <input type="number" id="numPairs" placeholder="ex: 100">
+      </div>
+      <button type="button" id="simulateButton">Tirer au sort</button>
+    </form>
+    <div id="result"></div>
+  </div>
+
+  <button type="button" id="resetButton" style="display: none;">Réinitialiser</button>
+
+  <script>
+    // Variables globales pour les paramètres et le dessin
+    let redMean, redStd, greenMean, greenStd;
+    let xMin, xMax, yMax;
+    let canvasWidth = 800, canvasHeight = 600;
+    let marginLeft = 60, marginRight = 20, marginTop = 40, marginBottom = 60;
+    let distributionsDrawn = false;  // indique si l'affichage de la courbe est réalisé
+    let simulationDone = false;      // indique si un tirage a été effectué
+
+    // Stockage des points tirés pour chaque distribution
+    let redSamples = [];
+    let greenSamples = [];
+    let victoryCount = 0;
+
+    // --- Fonctions pour la loi normale ---
+    function normalPDF(x, mu, sigma) {
+      return (1 / (sigma * Math.sqrt(2 * Math.PI))) * Math.exp(-((x - mu) ** 2) / (2 * sigma * sigma));
+    }
+
+    // --- Fonctions de transformation des coordonnées (données -> canvas) ---
+    function dataToScreenX(x) {
+      return map(x, xMin, xMax, marginLeft, canvasWidth - marginRight);
+    }
+    function dataToScreenY(y) {
+      // On inverse l'axe y (0 en bas, yMax en haut)
+      return map(y, 0, yMax, canvasHeight - marginBottom, marginTop);
+    }
+
+    // --- p5.js setup & draw ---
+    function setup() {
+      // Crée le canvas et l'attache au div canvasContainer
+      let cnv = createCanvas(canvasWidth, canvasHeight);
+      cnv.parent("canvasContainer");
+      background(255);
+      noLoop();  // on redessine uniquement sur demande
+    }
+
+    function draw() {
+      clear();
+      background(255);
+
+      if (distributionsDrawn) {
+        drawAxes();
+        drawCurves();
+      }
+
+      if (simulationDone) {
+        drawSimulationPoints();
+      }
+    }
+
+    // --- Dessiner les axes avec quelques graduations ---
+    function drawAxes() {
+      stroke(0);
+      strokeWeight(1);
+      // Axe X
+      line(marginLeft, canvasHeight - marginBottom, canvasWidth - marginRight, canvasHeight - marginBottom);
+      // Axe Y
+      line(marginLeft, canvasHeight - marginBottom, marginLeft, marginTop);
+
+      // Graduations Axe X
+      let numXTicks = 10;
+      for (let i = 0; i <= numXTicks; i++) {
+        let xVal = lerp(xMin, xMax, i / numXTicks);
+        let xPos = dataToScreenX(xVal);
+        line(xPos, canvasHeight - marginBottom, xPos, canvasHeight - marginBottom + 5);
+        noStroke();
+        fill(0);
+        textAlign(CENTER, TOP);
+        text(xVal.toFixed(2), xPos, canvasHeight - marginBottom + 8);
+        stroke(0);
+      }
+
+      // Graduations Axe Y
+      let numYTicks = 6;
+      for (let i = 0; i <= numYTicks; i++) {
+        let yVal = lerp(0, yMax, i / numYTicks);
+        let yPos = dataToScreenY(yVal);
+        line(marginLeft - 5, yPos, marginLeft, yPos);
+        noStroke();
+        fill(0);
+        textAlign(RIGHT, CENTER);
+        text(yVal.toFixed(3), marginLeft - 8, yPos);
+        stroke(0);
+      }
+
+      // Légendes des axes
+      noStroke();
+      fill(0);
+      textAlign(CENTER, CENTER);
+      text("Variable", (marginLeft + (canvasWidth - marginRight)) / 2, canvasHeight - marginBottom + 40);
+      push();
+      translate(marginLeft - 40, (canvasHeight - marginBottom + marginTop)/2);
+      rotate(-HALF_PI);
+      text("Densité", 0, 0);
+      pop();
+    }
+
+    // --- Dessiner les courbes de densité pour les deux distributions ---
+    function drawCurves() {
+      let step = (xMax - xMin) / (width - marginLeft - marginRight);
+      // Courbe Rouge
+      stroke(255, 0, 0);
+      strokeWeight(2);
+      noFill();
+      beginShape();
+      for (let x = xMin; x <= xMax; x += step) {
+        let y = normalPDF(x, redMean, redStd);
+        vertex(dataToScreenX(x), dataToScreenY(y));
+      }
+      endShape();
+
+      // Courbe Verte
+      stroke(0, 150, 0);
+      strokeWeight(2);
+      noFill();
+      beginShape();
+      for (let x = xMin; x <= xMax; x += step) {
+        let y = normalPDF(x, greenMean, greenStd);
+        vertex(dataToScreenX(x), dataToScreenY(y));
+      }
+      endShape();
+
+      // Légende sur le graphique
+      noStroke();
+      fill(255, 0, 0);
+      rect(marginLeft + 10, marginTop + 10, 15, 15);
+      fill(0);
+      textAlign(LEFT, CENTER);
+      text("Population Rouge", marginLeft + 30, marginTop + 18);
+
+      fill(0, 150, 0);
+      rect(marginLeft + 10, marginTop + 35, 15, 15);
+      fill(0);
+      text("Population Verte", marginLeft + 30, marginTop + 43);
+    }
+
+    // --- Dessiner les points issus des tirages ---
+    function drawSimulationPoints() {
+      // Pour chaque paire, on trace une petite ligne reliant le point rouge et le point vert
+      for (let i = 0; i < redSamples.length; i++) {
+        // Pour le rouge
+        let redX = dataToScreenX(redSamples[i].value);
+        let redY = dataToScreenY(redSamples[i].pdf);
+        // Pour le vert
+        let greenX = dataToScreenX(greenSamples[i].value);
+        let greenY = dataToScreenY(greenSamples[i].pdf);
+
+        // Ligne reliant les deux points (en gris léger)
+        stroke(150);
+        strokeWeight(1);
+        line(redX, redY, greenX, greenY);
+
+        // Dessiner le point rouge
+        noStroke();
+        fill(255, 0, 0);
+        ellipse(redX, redY, 6, 6);
+
+        // Dessiner le point vert
+        fill(0, 150, 0);
+        ellipse(greenX, greenY, 6, 6);
+      }
+    }
+
+    // --- Gestion des événements sur les boutons ---
+    document.getElementById("displayButton").addEventListener("click", function() {
+      // Récupérer et valider les paramètres
+      redMean = parseFloat(document.getElementById("redMean").value);
+      redStd  = parseFloat(document.getElementById("redStd").value);
+      greenMean = parseFloat(document.getElementById("greenMean").value);
+      greenStd  = parseFloat(document.getElementById("greenStd").value);
+
+      if (isNaN(redMean) || isNaN(redStd) || isNaN(greenMean) || isNaN(greenStd)) {
+        alert("Veuillez renseigner toutes les valeurs numériques.");
+        return;
+      }
+      if (redStd <= 0 || greenStd <= 0) {
+        alert("Les écarts-types doivent être strictement positifs.");
+        return;
+      }
+
+      // Définir les bornes de l'axe X en prenant 4 écarts-types autour de chaque moyenne
+      xMin = Math.min(redMean - 4 * redStd, greenMean - 4 * greenStd);
+      xMax = Math.max(redMean + 4 * redStd, greenMean + 4 * greenStd);
+
+      // Déterminer l'échelle de l'axe Y : la densité maximale se trouve en x = moyenne
+      let maxRedPDF = normalPDF(redMean, redMean, redStd);
+      let maxGreenPDF = normalPDF(greenMean, greenMean, greenStd);
+      yMax = Math.max(maxRedPDF, maxGreenPDF) * 1.2; // marge de 20%
+
+      distributionsDrawn = true;
+      simulationDone = false;
+      // Réinitialiser les tirages précédents
+      redSamples = [];
+      greenSamples = [];
+      victoryCount = 0;
+      // Afficher la zone de simulation et le bouton de réinitialisation
+      document.getElementById("simulationControls").style.display = "block";
+      document.getElementById("resetButton").style.display = "block";
+      document.getElementById("result").innerHTML = "";
+      redraw();
+    });
+
+    document.getElementById("simulateButton").addEventListener("click", function() {
+      let numPairs = parseInt(document.getElementById("numPairs").value);
+      if (isNaN(numPairs) || numPairs <= 0) {
+        alert("Veuillez saisir un nombre entier positif pour le nombre de paires.");
+        return;
+      }
+
+      // Réinitialiser les tableaux de tirages
+      redSamples = [];
+      greenSamples = [];
+      victoryCount = 0;
+
+      // Pour chaque paire, tirer un individu pour chaque population
+      for (let i = 0; i < numPairs; i++) {
+        let redVal = redMean + redStd * randomGaussian();
+        let greenVal = greenMean + greenStd * randomGaussian();
+
+        // Calcul de la densité (pour positionner le point sur la courbe)
+        let redPdf = normalPDF(redVal, redMean, redStd);
+        let greenPdf = normalPDF(greenVal, greenMean, greenStd);
+
+        redSamples.push({value: redVal, pdf: redPdf});
+        greenSamples.push({value: greenVal, pdf: greenPdf});
+
+        if (greenVal > redVal) {
+          victoryCount++;
+        }
+      }
+      simulationDone = true;
+      document.getElementById("result").innerHTML = "<p>Nombre de victoires du vert : <strong>" + victoryCount + "</strong> sur " + numPairs + " paires.</p>";
+      redraw();
+    });
+
+    document.getElementById("resetButton").addEventListener("click", function() {
+      // Réinitialiser toutes les zones de l'interface
+      distributionsDrawn = false;
+      simulationDone = false;
+      redSamples = [];
+      greenSamples = [];
+      victoryCount = 0;
+      document.getElementById("simulationControls").style.display = "none";
+      document.getElementById("resetButton").style.display = "none";
+      document.getElementById("result").innerHTML = "";
+      // Optionnel : réinitialiser les valeurs des champs (ou laisser telles quelles)
+      // document.getElementById("paramForm").reset();
+      // document.getElementById("simulationForm").reset();
+      clear();
+      background(255);
+    });
+  </script>
+</body>
+</html>
